@@ -40,9 +40,6 @@ func GetUser(id int) User {
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	fmt.Println("Conexión exitosa en el contenedor")
-
 	rows, err := db.Query("SELECT id, name, last_name, username, email, password FROM users where id = $1", id)
 	if err != nil {
 		log.Fatal(err)

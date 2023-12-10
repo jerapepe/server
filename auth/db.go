@@ -21,9 +21,6 @@ func DataBase() {
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	fmt.Println("Conexión exitosa en el contenedor")
-
 	rows, err := db.Query("SELECT id, name, username FROM users")
 	if err != nil {
 		log.Fatal(err)

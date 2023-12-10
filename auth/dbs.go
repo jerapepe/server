@@ -21,7 +21,7 @@ func CreateDB() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println("Base de datos creada correctamente")
+	fmt.Println("Base de datos creada")
 }
 
 func CreateTable() {

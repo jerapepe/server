@@ -34,7 +34,7 @@ func main() {
 		WriteTimeout: 15 * time.Second,
 		ReadTimeout:  15 * time.Second,
 	}
-	fmt.Println("Servidor iniciado en el puerto 8000")
+	fmt.Println("Server 8000")
 	auth.Cod()
 	log.Fatal(srv.ListenAndServe())
 }
