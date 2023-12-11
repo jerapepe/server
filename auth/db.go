@@ -10,32 +10,29 @@ import (
 
 func DataBase() {
 	connStr := "host=192.168.0.73 port=5432 user=postgres dbname=marketupi password=mi_contraseña sslmode=disable"
-
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
-
 	err = db.Ping()
 	if err != nil {
 		log.Fatal(err)
 	}
-	rows, err := db.Query("SELECT id, name, username FROM users")
+	rows, err := db.Query("SELECT id, name, username, password FROM users")
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer rows.Close()
-
 	for rows.Next() {
 		var id int
 		var name string
 		var username string
-
-		err := rows.Scan(&id, &name, &username)
+		var password string
+		err := rows.Scan(&id, &name, &username, &password)
 		if err != nil {
 			log.Fatal(err)
 		}
-		fmt.Println(id, name, username)
+		fmt.Println(id, name, username, password)
 	}
 }
