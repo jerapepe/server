@@ -63,17 +63,23 @@ func GetUser(id int) User {
 	return us
 }
 
-func CreateUser(name string, last_name string, email string, username string, password string) *User {
+func CreateUser(name string, last_name string, email string, username string, password string) (*User, bool) {
 	hashedPassword, err := hashPassword(password)
 	if err != nil {
 		fmt.Println("Error al hashear la contraseña:", err)
+		return nil, false
 	}
-	UserN := UserDB(name, last_name, email, username, hashedPassword)
+	UserN, rr := UserDB(name, last_name, email, username, hashedPassword)
+	if rr != nil {
+		fmt.Println("Error", err)
+		return nil, false
+	}
 	err = comparePasswords(hashedPassword, password)
 	if err != nil {
 		fmt.Println("Las contraseñas no coinciden")
+		return nil, false
 	}
-	return UserN
+	return UserN, true
 }
 
 func hashPassword(password string) ([]byte, error) {
@@ -89,7 +95,7 @@ func comparePasswords(hashedPassword []byte, password string) error {
 	return err
 }
 
-func UserDB(name string, last_name string, email string, username string, password []byte) *User {
+func UserDB(name string, last_name string, email string, username string, password []byte) (*User, error) {
 	connStr := "host=192.168.0.73 port=5432 user=postgres dbname=marketupi password=mi_contraseña sslmode=disable"
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
@@ -107,7 +113,7 @@ func UserDB(name string, last_name string, email string, username string, passwo
 		Email:    email,
 		Username: username,
 		Password: string(password),
-	}
+	}, nil
 }
 
 func Login(username, password string) (bool, *User, string, error) {
