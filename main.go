@@ -76,10 +76,9 @@ func main() {
 	router.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 	})
-
 	srv := &http.Server{
 		Handler:      router,
-		Addr:         ":8000",
+		Addr:         "0.0.0.0:8000",
 		WriteTimeout: 15 * time.Second,
 		ReadTimeout:  15 * time.Second,
 	}
@@ -97,71 +96,85 @@ func HomeHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func SignUpHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "http://localhost:8080")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Headers", "authentication, content-type")
 
-	if r.Method == "POST" {
-		var formData struct {
-			Name     string
-			LastName string
-			Email    string
-			Username string
-			Password string
-		}
-		if err := json.NewDecoder(r.Body).Decode(&formData); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		fmt.Println(formData.Name)
-		us, logged := users.CreateUser(formData.Name, formData.LastName, formData.Email, formData.Username, formData.Password)
-		if logged {
-			token := auth.Cod(us.Username)
-			loggedInUser = &User{
-				Username: us.Username,
-				Password: us.Password,
-				Token:    token,
-			}
-			response := map[string]interface{}{"token": token, "isVerified": true}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(response)
-		}
-	}
-	if r.Method == "GET" {
-		w.Write([]byte(`{"message": "Hello world"}`))
-		err := templates.ExecuteTemplate(w, "login.html", nil)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-		}
+	resultadoCh := make(chan map[string]interface{})
+	errCh := make(chan error)
 
+	if r.Method == "POST" {
+		go func() {
+			var formData struct {
+				Name     string
+				LastName string
+				Email    string
+				Username string
+				Password string
+			}
+			if err := json.NewDecoder(r.Body).Decode(&formData); err != nil {
+				errCh <- err
+				return
+			}
+			fmt.Println(formData.Username)
+			us, logged := users.CreateUser(formData.Name, formData.LastName, formData.Email, formData.Username, formData.Password)
+			if logged {
+				token := auth.Cod(us.Username)
+				loggedInUser = &User{
+					Username: us.Username,
+					Password: us.Password,
+					Token:    token,
+				}
+				response := map[string]interface{}{"token": token, "isVerified": true, "username": us.Username}
+				resultadoCh <- response
+				return
+			}
+		}()
+		select {
+		case res := <-resultadoCh:
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(res)
+		case err := <-errCh:
+			http.Error(w, err.Error(), http.StatusBadRequest)
+
+		}
 	}
 }
 
 func SignInHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "http://localhost:8080")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Headers", "authentication, content-type")
+
+	resultadoCh := make(chan map[string]interface{})
+	errCh := make(chan error)
+
 	if r.Method == "POST" {
-		var formData struct {
-			Username string
-			Password string
-		}
-		if err := json.NewDecoder(r.Body).Decode(&formData); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		logged, us, token, _ := users.Login(formData.Username, formData.Password)
-		if logged {
-			loggedInUser = &User{
-				Username: us.Username,
-				Password: us.Password,
-				Token:    token,
+		go func() {
+			var formData struct {
+				Username string
+				Password string
 			}
-			response := map[string]interface{}{"token": token, "isVerified": true}
+			if err := json.NewDecoder(r.Body).Decode(&formData); err != nil {
+				errCh <- err
+				return
+			}
+			logged, us, token, _ := users.Login(formData.Username, formData.Password)
+			if logged {
+				loggedInUser = &User{
+					Username: us.Username,
+					Password: us.Password,
+					Token:    token,
+				}
+				response := map[string]interface{}{"token": token, "isVerified": true, "username": formData.Username}
+				resultadoCh <- response
+				return
+			}
+		}()
+		select {
+		case res := <-resultadoCh:
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(response)
-		} else {
-			response := map[string]interface{}{"isVerified": false}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(response)
+			json.NewEncoder(w).Encode(res)
+		case err := <-errCh:
+			http.Error(w, err.Error(), http.StatusBadRequest)
 		}
 	}
 	if r.Method == "GET" {
@@ -174,18 +187,41 @@ func SignInHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func UserHadler(w http.ResponseWriter, r *http.Request) {
-	if r.Method == "GET" {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "authentication, content-type")
 
-	}
+	resultadoCh := make(chan map[string]interface{})
+	errCh := make(chan error)
+
 	if r.Method == "POST" {
-		errs := r.ParseForm()
-		if errs != nil {
-			http.Error(w, "Error parsing form", http.StatusBadRequest)
-			return
+		go func() {
+			var formData struct {
+				Username string
+				Password string
+			}
+			if err := json.NewDecoder(r.Body).Decode(&formData); err != nil {
+				errCh <- err
+				return
+			}
+
+			us, logged, _ := users.GetUser(formData.Username)
+			if logged {
+				token := auth.Cod(us.Username)
+				response := map[string]interface{}{"token": token, "isVerified": true, "username": us.Username, "name": us.Name, "lastname": us.LastName, "email": us.Email}
+				resultadoCh <- response
+				return
+			}
+		}()
+
+		select {
+		case res := <-resultadoCh:
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(res)
+		case err := <-errCh:
+			http.Error(w, err.Error(), http.StatusBadRequest)
 		}
-		err := templates.ExecuteTemplate(w, "user.html", nil)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-		}
+	}
+	if r.Method == "GET" {
+		w.Write([]byte(`{"message":"hola"}`))
 	}
 }
