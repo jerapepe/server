@@ -64,6 +64,7 @@ func main() {
 	router.HandleFunc("/", HomeHandler).Methods(http.MethodGet, http.MethodPost, http.MethodOptions)
 	router.HandleFunc("/signup", SignUpHandler).Methods(http.MethodGet, http.MethodPost, http.MethodOptions)
 	router.HandleFunc("/user", UserHadler).Methods(http.MethodGet, http.MethodPost, http.MethodOptions)
+	router.HandleFunc("/admin", AdminHadler).Methods(http.MethodGet, http.MethodPost, http.MethodOptions)
 	router.HandleFunc("/signin", SignInHandler).Methods(http.MethodGet, http.MethodPost, http.MethodOptions)
 	router.HandleFunc("/graphql", func(w http.ResponseWriter, r *http.Request) {
 		result := graphql.Do(graphql.Params{
@@ -223,5 +224,50 @@ func UserHadler(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method == "GET" {
 		w.Write([]byte(`{"message":"hola"}`))
+	}
+}
+
+func AdminHadler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "authentication, content-type")
+
+	resultadoCh := make(chan map[string]interface{})
+	errCh := make(chan error)
+
+	if r.Method == "POST" {
+		go func() {
+			var formData struct {
+				Username string
+				Password string
+			}
+			if err := json.NewDecoder(r.Body).Decode(&formData); err != nil {
+				errCh <- err
+				return
+			}
+			us, _, _ := users.GetUser(formData.Username)
+			if us.Role == "admin" {
+				userss, err := users.GetUsersData()
+				if err != nil {
+					fmt.Println(err)
+				}
+				usd, err := users.ConvertByteToJSON(userss)
+				if err != nil {
+					fmt.Println(err)
+				}
+				response := map[string]interface{}{"users": usd}
+				resultadoCh <- response
+				return
+			}
+		}()
+		select {
+		case res := <-resultadoCh:
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(res)
+		case err := <-errCh:
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		}
+	}
+	if r.Method == "GET" {
+		w.Write([]byte(`{"message":"dont send data"}`))
 	}
 }

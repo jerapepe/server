@@ -3,6 +3,7 @@ package users
 import (
 	"Project/auth"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 
@@ -11,14 +12,24 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+/*type User struct {
+	ID       int
+	Name     string
+	LastName string
+	Email    string
+	Username string
+	Password string
+	Role     string
+}*/
+
 type User struct {
-	ID        int
-	Name      string
-	LastName  string
-	Email     string
-	Username  string
-	Password  string
-	Permision string
+	ID       int    `db:"id"`
+	Name     string `db:"name"`
+	LastName string `db:"last_name"`
+	Username string `db:"username"`
+	Email    string `db:"email"`
+	Password string `db:"password"`
+	Role     string `db:"role"`
 }
 
 func GetUser(username string) (User, bool, error) {
@@ -34,7 +45,7 @@ func GetUser(username string) (User, bool, error) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	rows, err := db.Query("SELECT id, name, last_name, username, email, password FROM users where username = $1", username)
+	rows, err := db.Query("SELECT id, name, last_name, username, email, role FROM users where username = $1", username)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -46,9 +57,9 @@ func GetUser(username string) (User, bool, error) {
 		var last_name string
 		var username string
 		var email string
-		var password string
+		var role string
 
-		err := rows.Scan(&id, &name, &last_name, &username, &email, &password)
+		err := rows.Scan(&id, &name, &last_name, &username, &email, &role)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -59,7 +70,7 @@ func GetUser(username string) (User, bool, error) {
 			LastName: last_name,
 			Email:    email,
 			Username: username,
-			Password: password,
+			Role:     role,
 		}
 	}
 	return us, true, nil
@@ -229,4 +240,34 @@ func AlterTable() {
 	if err != nil {
 		log.Fatal(err)
 	}
+}
+
+func GetUsersData() ([]byte, error) {
+	connStr := "host=192.168.0.73 port=5432 user=postgres dbname=marketupi password=mi_contraseña sslmode=disable"
+	db, err := sqlx.Connect("postgres", connStr)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	var users []User
+	err = db.Select(&users, "SELECT name, last_name, username, email, role FROM users")
+	if err != nil {
+		return nil, err
+	}
+
+	jsonData, err := json.Marshal(users)
+	if err != nil {
+		return nil, err
+	}
+	return jsonData, nil
+}
+
+func ConvertByteToJSON(byteData []byte) ([]User, error) {
+	var users []User
+	err := json.Unmarshal(byteData, &users)
+	if err != nil {
+		return nil, err
+	}
+	return users, nil
 }
