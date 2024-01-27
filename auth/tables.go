@@ -9,20 +9,22 @@ import (
 )
 
 type User struct {
-	ID       int    `db:"id"`
-	Name     string `db:"name"`
-	LastName string `db:"last_name"`
-	Username string `db:"username"`
-	Email    string `db:"email"`
-	Password string `db:"password"`
-	Role     string `db:"role"`
+	ID           int    `db:"id"`
+	Name         string `db:"name"`
+	LastName     string `db:"last_name"`
+	Username     string `db:"username"`
+	Email        string `db:"email"`
+	Password     string `db:"password"`
+	Role         string `db:"role"`
+	ProfileImage []byte `db:"profile_image"`
 }
 
 type Vendor struct {
-	ID         int `db:"id"`
-	IDUser     int `db:"id_user"`
-	IDState    int `db:"id_state"`
-	IDLocation int `db:"id_location"`
+	ID           int    `db:"id"`
+	IDUser       int    `db:"id_user"`
+	IDState      int    `db:"id_state"`
+	IDLocation   int    `db:"id_location"`
+	ProfileImage []byte `db:"profile_image"`
 }
 
 type State struct {
@@ -41,11 +43,12 @@ type Location struct {
 }
 
 type Product struct {
-	ID          int     `db:"id"`
-	Name        string  `db:"name"`
-	Price       float64 `db:"price"`
-	Description string  `db:"description"`
-	IDVendor    int     `db:"id_vendor"`
+	ID           int     `db:"id"`
+	Name         string  `db:"name"`
+	Price        float64 `db:"price"`
+	Description  string  `db:"description"`
+	IDVendor     int     `db:"id_vendor"`
+	ProfileImage []byte  `db:"profile_image"`
 }
 
 type ProductCategory struct {

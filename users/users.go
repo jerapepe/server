@@ -23,13 +23,14 @@ import (
 }*/
 
 type User struct {
-	ID       int    `db:"id"`
-	Name     string `db:"name"`
-	LastName string `db:"last_name"`
-	Username string `db:"username"`
-	Email    string `db:"email"`
-	Password string `db:"password"`
-	Role     string `db:"role"`
+	ID           int    `db:"id"`
+	Name         string `db:"name"`
+	LastName     string `db:"last_name"`
+	Username     string `db:"username"`
+	Email        string `db:"email"`
+	Password     string `db:"password"`
+	Role         string `db:"role"`
+	ProfileImage []byte `db:"profile_image"`
 }
 
 func GetUser(username string) (User, bool, error) {

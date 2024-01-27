@@ -46,3 +46,22 @@ func UpdateUserRoles() {
 	}
 	fmt.Println("Tabla alterada")
 }
+
+func UpdateUser() {
+	connStr := "host=192.168.0.73 port=5432 user=postgres dbname=marketupi password=mi_contraseña sslmode=disable"
+
+	db, err := sql.Open("postgres", connStr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	_, err = db.Exec(`
+	ALTER TABLE product
+	ADD COLUMN profile_image BYTEA;	
+	`)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("Tabla alterada")
+}

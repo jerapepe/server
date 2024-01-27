@@ -2,12 +2,14 @@ package main
 
 import (
 	"Project/auth"
+	"Project/products"
 	"Project/users"
 	"encoding/json"
 	"fmt"
 	"html/template"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -65,6 +67,7 @@ func main() {
 	router.HandleFunc("/signup", SignUpHandler).Methods(http.MethodGet, http.MethodPost, http.MethodOptions)
 	router.HandleFunc("/user", UserHadler).Methods(http.MethodGet, http.MethodPost, http.MethodOptions)
 	router.HandleFunc("/admin", AdminHadler).Methods(http.MethodGet, http.MethodPost, http.MethodOptions)
+	router.HandleFunc("/products", ProductsHadler).Methods(http.MethodGet, http.MethodPost, http.MethodOptions)
 	router.HandleFunc("/signin", SignInHandler).Methods(http.MethodGet, http.MethodPost, http.MethodOptions)
 	router.HandleFunc("/graphql", func(w http.ResponseWriter, r *http.Request) {
 		result := graphql.Do(graphql.Params{
@@ -77,6 +80,7 @@ func main() {
 	router.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 	})
+
 	srv := &http.Server{
 		Handler:      router,
 		Addr:         "0.0.0.0:8000",
@@ -234,8 +238,12 @@ func AdminHadler(w http.ResponseWriter, r *http.Request) {
 	resultadoCh := make(chan map[string]interface{})
 	errCh := make(chan error)
 
+	var wg sync.WaitGroup
+
 	if r.Method == "POST" {
+		wg.Add(1)
 		go func() {
+			defer wg.Done()
 			var formData struct {
 				Username string
 				Password string
@@ -259,6 +267,66 @@ func AdminHadler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}()
+
+		go func() {
+			wg.Wait()
+			close(resultadoCh)
+			close(errCh)
+		}()
+
+		select {
+		case res := <-resultadoCh:
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(res)
+		case err := <-errCh:
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		}
+	}
+	if r.Method == "GET" {
+		w.Write([]byte(`{"message":"dont send data"}`))
+	}
+}
+
+func ProductsHadler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "authentication, content-type")
+
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	resultadoCh := make(chan map[string]interface{})
+	errCh := make(chan error)
+
+	var wg sync.WaitGroup
+
+	if r.Method == "POST" {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			var formData struct {
+				Username string
+				Password string
+			}
+			if err := json.NewDecoder(r.Body).Decode(&formData); err != nil {
+				errCh <- err
+				return
+			}
+			products, err := products.GetProducts()
+			if err != nil {
+				fmt.Println(err)
+			}
+			response := map[string]interface{}{"products": products}
+			resultadoCh <- response
+		}()
+
+		go func() {
+			wg.Wait()
+			close(resultadoCh)
+			close(errCh)
+		}()
+
 		select {
 		case res := <-resultadoCh:
 			w.Header().Set("Content-Type", "application/json")
