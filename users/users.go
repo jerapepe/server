@@ -12,16 +12,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-/*type User struct {
-	ID       int
-	Name     string
-	LastName string
-	Email    string
-	Username string
-	Password string
-	Role     string
-}*/
-
 type User struct {
 	ID           int    `db:"id"`
 	Name         string `db:"name"`
@@ -33,12 +23,13 @@ type User struct {
 	ProfileImage []byte `db:"profile_image"`
 }
 
+var connStr = "host=192.168.0.73 port=5432 user=postgres dbname=marketupi password=mi_contraseña sslmode=disable"
+
 func GetUser(username string) (User, bool, error) {
-	connStr := "host=192.168.0.73 port=5432 user=postgres dbname=marketupi password=mi_contraseña sslmode=disable"
 	us := User{}
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
-		log.Fatal(err)
+		return User{}, false, err
 	}
 	defer db.Close()
 
@@ -48,7 +39,7 @@ func GetUser(username string) (User, bool, error) {
 	}
 	rows, err := db.Query("SELECT id, name, last_name, username, email, role FROM users where username = $1", username)
 	if err != nil {
-		log.Fatal(err)
+		return User{}, false, err
 	}
 	defer rows.Close()
 
@@ -64,7 +55,6 @@ func GetUser(username string) (User, bool, error) {
 		if err != nil {
 			log.Fatal(err)
 		}
-		//fmt.Println(id, name, last_name, username, email, password)
 		us = User{
 			ID:       id,
 			Name:     name,
@@ -86,15 +76,9 @@ func CreateUser(name string, last_name string, email string, username string, pa
 			fmt.Println("Error al hashear la contraseña:", err)
 			return nil, false
 		}
-
-		UserN, rr := UserDB(name, last_name, email, username, hashedPassword)
+		UserN, rr := userDB(name, last_name, email, username, hashedPassword)
 		if rr != nil {
 			fmt.Println("Error", err)
-			return nil, false
-		}
-		err = comparePasswords(hashedPassword, password)
-		if err != nil {
-			fmt.Println("Las contraseñas no coinciden")
 			return nil, false
 		}
 		return UserN, true
@@ -115,24 +99,22 @@ func comparePasswords(hashedPassword []byte, password string) error {
 	return err
 }
 
-func UserDB(name string, last_name string, email string, username string, password []byte) (*User, error) {
-	connStr := "host=192.168.0.73 port=5432 user=postgres dbname=marketupi password=mi_contraseña sslmode=disable"
+func userDB(name string, last_name string, email string, username string, password []byte) (*User, error) {
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 	defer db.Close()
 
 	_, err = db.Exec(`INSERT INTO users (name, last_name, username, email, password) VALUES ($1, $2, $3, $4, $5)`,
 		name, last_name, username, email, password)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 	return &User{
 		Name:     name,
 		Email:    email,
 		Username: username,
-		Password: string(password),
 	}, nil
 }
 
@@ -158,7 +140,6 @@ func Login(username, password string) (bool, *User, string, error) {
 }
 
 func getUserFromDB(username string) (*User, error) {
-	connStr := "host=192.168.0.73 port=5432 user=postgres dbname=marketupi password=mi_contraseña sslmode=disable"
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
 		log.Fatal(err)
@@ -193,7 +174,6 @@ func getUserFromDB(username string) (*User, error) {
 }
 
 func DeleteUserFromDB(id int) error {
-	connStr := "host=192.168.0.73 port=5432 user=postgres dbname=marketupi password=mi_contraseña sslmode=disable"
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
 		return err
@@ -211,7 +191,6 @@ func DeleteUserFromDB(id int) error {
 }
 
 func InsertSampleDat(name string, last_name string, username string, email string, password string) {
-	connStr := "host=192.168.0.73 port=5432 user=postgres dbname=marketupi password=mi_contraseña sslmode=disable"
 	db, err := sqlx.Connect("postgres", connStr)
 	if err != nil {
 		log.Fatal(err)
@@ -227,7 +206,6 @@ func InsertSampleDat(name string, last_name string, username string, email strin
 }
 
 func AlterTable() {
-	connStr := "host=192.168.0.73 port=5432 user=postgres dbname=marketupi password=mi_contraseña sslmode=disable"
 	db, err := sqlx.Connect("postgres", connStr)
 	if err != nil {
 		log.Fatal(err)
@@ -244,7 +222,6 @@ func AlterTable() {
 }
 
 func GetUsersData() ([]byte, error) {
-	connStr := "host=192.168.0.73 port=5432 user=postgres dbname=marketupi password=mi_contraseña sslmode=disable"
 	db, err := sqlx.Connect("postgres", connStr)
 	if err != nil {
 		return nil, err
