@@ -7,7 +7,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"io"
 	"net/http"
+	"os"
+	"strconv"
 	"sync"
 
 	"github.com/gorilla/mux"
@@ -20,6 +23,9 @@ const (
 	endpointUser     = "/user"
 	endpointAdmin    = "/admin"
 	endpointProducts = "/products"
+	endpointAccess   = "/access"
+	endpointSearch   = "/search"
+	endpointAdd      = "/add/product"
 )
 
 var templates = template.Must(template.ParseFiles("templates/index.html", "templates/user.html", "templates/login.html"))
@@ -30,8 +36,6 @@ type User struct {
 	Token    string
 }
 
-var loggedInUser *User
-
 func SetRoutes(router *mux.Router) {
 	staticDir := "/static/files"
 	router.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir(staticDir))))
@@ -40,7 +44,10 @@ func SetRoutes(router *mux.Router) {
 	router.HandleFunc(endpointSignUp, signUpHandler).Methods(http.MethodGet, http.MethodPost, http.MethodOptions)
 	router.HandleFunc(endpointUser, userHadler).Methods(http.MethodGet, http.MethodPost, http.MethodOptions)
 	router.HandleFunc(endpointAdmin, adminHadler).Methods(http.MethodGet, http.MethodPost, http.MethodOptions)
+	router.HandleFunc(endpointAdd, addProductsHadler).Methods(http.MethodGet, http.MethodPost, http.MethodOptions)
 	router.HandleFunc(endpointProducts, productsHadler).Methods(http.MethodGet, http.MethodPost, http.MethodOptions)
+	router.HandleFunc(endpointAccess, accessHadler).Methods(http.MethodGet, http.MethodPost, http.MethodOptions)
+	router.HandleFunc(endpointSearch, searchHadler).Methods(http.MethodGet, http.MethodPost, http.MethodOptions)
 	router.HandleFunc(endpointSignIn, signInHandler).Methods(http.MethodGet, http.MethodPost, http.MethodOptions)
 	router.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]bool{"ok": true})
@@ -79,14 +86,8 @@ func signUpHandler(w http.ResponseWriter, r *http.Request) {
 				errCh <- err
 				return
 			}
-			us, logged := users.CreateUser(formData.Name, formData.LastName, formData.Email, formData.Username, formData.Password)
+			us, logged, token := users.CreateUser(formData.Name, formData.LastName, formData.Email, formData.Username, formData.Password)
 			if logged {
-				token := auth.Cod(us.Username)
-				loggedInUser = &User{
-					Username: us.Username,
-					Password: us.Password,
-					Token:    token,
-				}
 				response := map[string]interface{}{"token": token, "isVerified": true, "username": us.Username}
 				resultadoCh <- response
 				return
@@ -131,16 +132,9 @@ func signInHandler(w http.ResponseWriter, r *http.Request) {
 				errCh <- err
 				return
 			}
-			logged, us, token, _ := users.Login(formData.Username, formData.Password)
+			logged, us, token, _ := users.AuthenticationUser(formData.Username, formData.Password)
 			if logged {
-				loggedInUser = &User{
-					Username: us.Username,
-					Password: us.Password,
-					Token:    token,
-				}
-				response := map[string]interface{}{"token": token, "isVerified": true, "username": formData.Username}
-				valid := auth.Decode(token)
-				fmt.Println(valid)
+				response := map[string]interface{}{"token": token, "isVerified": true, "username": us.Username}
 				resultadoCh <- response
 				return
 			}
@@ -162,7 +156,7 @@ func signInHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method == "GET" {
 		w.Write([]byte(`{"message": "Hello world"}`))
-		err := templates.ExecuteTemplate(w, "login.html", loggedInUser)
+		err := templates.ExecuteTemplate(w, "login.html", "")
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
@@ -220,7 +214,7 @@ func userHadler(w http.ResponseWriter, r *http.Request) {
 
 func adminHadler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Headers", "authentication, content-type")
+	w.Header().Set("Access-Control-Allow-Headers", "authentication, content-type, authorization")
 
 	resultadoCh := make(chan map[string]interface{})
 	errCh := make(chan error)
@@ -231,16 +225,13 @@ func adminHadler(w http.ResponseWriter, r *http.Request) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			var formData struct {
-				Username string
-				Password string
+			token := r.Header.Get("Authorization")
+			user, err := users.DecodeToken(token)
+			if err != nil {
+				response := map[string]interface{}{"user": "tokenExpired"}
+				resultadoCh <- response
 			}
-			if err := json.NewDecoder(r.Body).Decode(&formData); err != nil {
-				errCh <- err
-				return
-			}
-			us, _, _ := users.GetUser(formData.Username)
-			if us.Role == "admin" {
+			if user.Role == "admin" {
 				userss, err := users.GetUsersData()
 				if err != nil {
 					fmt.Println(err)
@@ -287,19 +278,44 @@ func productsHadler(w http.ResponseWriter, r *http.Request) {
 	errCh := make(chan error)
 
 	var wg sync.WaitGroup
-
 	if r.Method == "POST" {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			var formData struct {
-				Username string
-				Password string
+				Name string
 			}
 			if err := json.NewDecoder(r.Body).Decode(&formData); err != nil {
 				errCh <- err
 				return
 			}
+			products, err := products.GetProduct(formData.Name)
+			if err != nil {
+				fmt.Println(err)
+			}
+			response := map[string]interface{}{"product": products}
+			resultadoCh <- response
+		}()
+
+		go func() {
+			wg.Wait()
+			close(resultadoCh)
+			close(errCh)
+		}()
+
+		select {
+		case res := <-resultadoCh:
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(res)
+		case err := <-errCh:
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		}
+	}
+
+	if r.Method == "GET" {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 			products, err := products.GetProducts()
 			if err != nil {
 				fmt.Println(err)
@@ -322,7 +338,190 @@ func productsHadler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 		}
 	}
+}
+
+func accessHadler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "authentication, content-type, authorization")
+
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	resultadoCh := make(chan map[string]interface{})
+	errCh := make(chan error)
+
+	var wg sync.WaitGroup
+
+	if r.Method == "POST" {
+		token := r.Header.Get("Authorization")
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			user, err := users.DecodeToken(token)
+			if err != nil {
+				response := map[string]interface{}{"user": "tokenExpired"}
+				resultadoCh <- response
+			}
+			response := map[string]interface{}{"user": user}
+			resultadoCh <- response
+		}()
+
+		go func() {
+			wg.Wait()
+			close(resultadoCh)
+			close(errCh)
+		}()
+
+		select {
+		case res := <-resultadoCh:
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(res)
+		case err := <-errCh:
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		}
+	}
 	if r.Method == "GET" {
 		w.Write([]byte(`{"message":"dont send data"}`))
+	}
+}
+
+func searchHadler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "authentication, content-type")
+
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	resultadoCh := make(chan map[string]interface{})
+	errCh := make(chan error)
+
+	var wg sync.WaitGroup
+
+	if r.Method == "GET" {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			query := r.URL.Query().Get("query")
+			if query != "" {
+				products, err := products.GetProduct(query)
+				if err != nil {
+					fmt.Println(err)
+				}
+				if products != nil {
+					response := map[string]interface{}{"products": products}
+					resultadoCh <- response
+				}
+			}
+		}()
+
+		go func() {
+			wg.Wait()
+			close(resultadoCh)
+			close(errCh)
+		}()
+
+		select {
+		case res := <-resultadoCh:
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(res)
+		case err := <-errCh:
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		}
+	}
+}
+
+func addProductsHadler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "authentication, content-type")
+
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	resultadoCh := make(chan map[string]interface{})
+	errCh := make(chan error)
+
+	var wg sync.WaitGroup
+
+	if r.Method == "POST" {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			err := r.ParseMultipartForm(10 << 20)
+			if err != nil {
+				http.Error(w, "Error al analizar el formulario", http.StatusBadRequest)
+				errCh <- err
+				return
+			}
+
+			name := r.FormValue("name")
+			priceStr := r.FormValue("price")
+			description := r.FormValue("description")
+			sellerIDStr := r.FormValue("sellerId")
+
+			file, handler, err := r.FormFile("image")
+			if err != nil {
+				http.Error(w, "Error al acceder al archivo", http.StatusBadRequest)
+				errCh <- err
+				return
+			}
+			defer file.Close()
+			filePath := fmt.Sprintf("uploads/%s", handler.Filename)
+			f, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE, 0666)
+			if err != nil {
+				http.Error(w, "Error al guardar el archivo", http.StatusInternalServerError)
+				errCh <- err
+				return
+			}
+			defer f.Close()
+			io.Copy(f, file)
+
+			price, err := strconv.ParseFloat(priceStr, 64)
+			if err != nil {
+				http.Error(w, "Error al convertir el precio", http.StatusBadRequest)
+				errCh <- err
+				return
+			}
+
+			sellerID, err := strconv.Atoi(sellerIDStr)
+			if err != nil {
+				errCh <- err
+				http.Error(w, "Error al convertir el ID del vendedor", http.StatusBadRequest)
+				return
+			}
+			data := products.FormDatas{
+				Name:         name,
+				Price:        price,
+				Description:  description,
+				IDVendor:     sellerID,
+				ProfileImage: []byte(filePath),
+			}
+			errs := products.AddProduct(products.FormDatas(data))
+			if errs != nil {
+				errCh <- err
+			}
+			response := map[string]interface{}{"products": "añadidos"}
+			resultadoCh <- response
+		}()
+
+		go func() {
+			wg.Wait()
+			close(resultadoCh)
+			close(errCh)
+		}()
+
+		select {
+		case res := <-resultadoCh:
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(res)
+		case err := <-errCh:
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		}
 	}
 }

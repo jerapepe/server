@@ -13,7 +13,10 @@ import (
 
 func main() {
 	connStr := "host=192.168.0.73 port=5432 user=postgres dbname=marketupi password=mi_contraseña sslmode=disable"
-	db.InitDB(connStr)
+	err := db.InitDB(connStr)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	router := mux.NewRouter()
 	routes.SetRoutes(router)

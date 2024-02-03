@@ -2,12 +2,11 @@ package users
 
 import (
 	"Project/auth"
-	"database/sql"
+	"Project/db"
 	"encoding/json"
 	"fmt"
 	"log"
 
-	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -23,21 +22,17 @@ type User struct {
 	ProfileImage []byte `db:"profile_image"`
 }
 
-var connStr = "host=192.168.0.73 port=5432 user=postgres dbname=marketupi password=mi_contraseña sslmode=disable"
+//var connStr = "host=192.168.0.73 port=5432 user=postgres dbname=marketupi password=mi_contraseña sslmode=disable"
 
 func GetUser(username string) (User, bool, error) {
 	us := User{}
-	db, err := sql.Open("postgres", connStr)
-	if err != nil {
-		return User{}, false, err
-	}
-	defer db.Close()
+	db := db.GetDB()
 
-	err = db.Ping()
+	err := db.Ping()
 	if err != nil {
 		log.Fatal(err)
 	}
-	rows, err := db.Query("SELECT id, name, last_name, username, email, role FROM users where username = $1", username)
+	rows, err := db.Queryx("SELECT id, name, last_name, username, email, role, profile_image FROM users where username = $1", username)
 	if err != nil {
 		return User{}, false, err
 	}
@@ -50,40 +45,43 @@ func GetUser(username string) (User, bool, error) {
 		var username string
 		var email string
 		var role string
+		var profile_image []byte
 
-		err := rows.Scan(&id, &name, &last_name, &username, &email, &role)
+		err := rows.Scan(&id, &name, &last_name, &username, &email, &role, &profile_image)
 		if err != nil {
 			log.Fatal(err)
 		}
 		us = User{
-			ID:       id,
-			Name:     name,
-			LastName: last_name,
-			Email:    email,
-			Username: username,
-			Role:     role,
+			ID:           id,
+			Name:         name,
+			LastName:     last_name,
+			Email:        email,
+			Username:     username,
+			Role:         role,
+			ProfileImage: profile_image,
 		}
 	}
 	return us, true, nil
 }
 
-func CreateUser(name string, last_name string, email string, username string, password string) (*User, bool) {
+func CreateUser(name string, last_name string, email string, username string, password string) (*User, bool, string) {
 	if name == "" && last_name == "" && email == "" && username == "" && password == "" {
 		fmt.Println("Null")
 	} else {
 		hashedPassword, err := hashPassword(password)
 		if err != nil {
 			fmt.Println("Error al hashear la contraseña:", err)
-			return nil, false
+			return nil, false, ""
 		}
-		UserN, rr := userDB(name, last_name, email, username, hashedPassword)
-		if rr != nil {
+		UserN, err := userDB(name, last_name, email, username, hashedPassword)
+		if err != nil {
 			fmt.Println("Error", err)
-			return nil, false
+			return nil, false, ""
 		}
-		return UserN, true
+		token := auth.Cod(UserN.Username)
+		return UserN, true, token
 	}
-	return nil, false
+	return nil, false, ""
 }
 
 func hashPassword(password string) ([]byte, error) {
@@ -100,13 +98,8 @@ func comparePasswords(hashedPassword []byte, password string) error {
 }
 
 func userDB(name string, last_name string, email string, username string, password []byte) (*User, error) {
-	db, err := sql.Open("postgres", connStr)
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
-
-	_, err = db.Exec(`INSERT INTO users (name, last_name, username, email, password) VALUES ($1, $2, $3, $4, $5)`,
+	db := db.GetDB()
+	_, err := db.Exec(`INSERT INTO users (name, last_name, username, email, password) VALUES ($1, $2, $3, $4, $5)`,
 		name, last_name, username, email, password)
 	if err != nil {
 		return nil, err
@@ -118,38 +111,13 @@ func userDB(name string, last_name string, email string, username string, passwo
 	}, nil
 }
 
-func Login(username, password string) (bool, *User, string, error) {
-	if username == "" && password == "" {
-		fmt.Println("Esta vacio")
-	} else {
-		user, err := getUserFromDB(username)
-		if err != nil {
-			return false, nil, "", err
-		}
-		if user == nil {
-			return false, nil, "", err
-		}
-		err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password))
-		if err != nil {
-			return false, nil, "", err
-		}
-		token := auth.Cod(user.Username)
-		return true, user, token, nil
-	}
-	return false, nil, "", nil
-}
-
 func getUserFromDB(username string) (*User, error) {
-	db, err := sql.Open("postgres", connStr)
+	db := db.GetDB()
+	err := db.Ping()
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close()
-	err = db.Ping()
-	if err != nil {
-		log.Fatal(err)
-	}
-	rows, err := db.Query("SELECT id, username, password FROM users where username = $1", username)
+	rows, err := db.Queryx("SELECT id, username, password FROM users where username = $1", username)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -174,12 +142,8 @@ func getUserFromDB(username string) (*User, error) {
 }
 
 func DeleteUserFromDB(id int) error {
-	db, err := sql.Open("postgres", connStr)
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-	err = db.Ping()
+	db := db.GetDB()
+	err := db.Ping()
 	if err != nil {
 		return err
 	}
@@ -191,13 +155,8 @@ func DeleteUserFromDB(id int) error {
 }
 
 func InsertSampleDat(name string, last_name string, username string, email string, password string) {
-	db, err := sqlx.Connect("postgres", connStr)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer db.Close()
-
-	_, err = db.Exec(`
+	db := db.GetDB()
+	_, err := db.Exec(`
 	    INSERT INTO users (name, last_name, username, email, password) VALUES ($1, $2, $3, $4, $5)
 	`, name, last_name, username, email, password)
 	if err != nil {
@@ -206,13 +165,8 @@ func InsertSampleDat(name string, last_name string, username string, email strin
 }
 
 func AlterTable() {
-	db, err := sqlx.Connect("postgres", connStr)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer db.Close()
-
-	_, err = db.Exec(`
+	db := db.GetDB()
+	_, err := db.Exec(`
 		ALTER TABLE users
 		ADD CONSTRAINT unique_username UNIQUE (username);
 	`)
@@ -222,14 +176,9 @@ func AlterTable() {
 }
 
 func GetUsersData() ([]byte, error) {
-	db, err := sqlx.Connect("postgres", connStr)
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
-
+	db := db.GetDB()
 	var users []User
-	err = db.Select(&users, "SELECT name, last_name, username, email, role FROM users")
+	err := db.Select(&users, "SELECT name, last_name, username, email, role FROM users")
 	if err != nil {
 		return nil, err
 	}

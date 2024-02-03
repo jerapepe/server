@@ -2,6 +2,7 @@ package products
 
 import (
 	"Project/db"
+	"fmt"
 
 	_ "github.com/lib/pq"
 )
@@ -16,9 +17,8 @@ type Product struct {
 }
 
 func GetProduct(name string) ([]Product, error) {
-	var products []Product
+	var product []Product
 	var err error
-
 	db := db.GetDB()
 
 	err = db.Ping()
@@ -26,7 +26,7 @@ func GetProduct(name string) ([]Product, error) {
 		return nil, err
 	}
 
-	rows, err := db.Queryx("SELECT id, name, price, description, id_vendor, profile_image FROM product where name = $1", name)
+	rows, err := db.Queryx("SELECT * FROM product WHERE LOWER(name) = LOWER($1)", name)
 	if err != nil {
 		return nil, err
 	}
@@ -38,9 +38,9 @@ func GetProduct(name string) ([]Product, error) {
 		if err != nil {
 			return nil, err
 		}
-		products = append(products, p)
+		product = append(product, p)
 	}
-	return products, nil
+	return product, nil
 }
 
 func GetProducts() ([]Product, error) {
@@ -70,4 +70,27 @@ func GetProducts() ([]Product, error) {
 		products = append(products, p)
 	}
 	return products, nil
+}
+
+type FormDatas struct {
+	Name         string
+	Price        float64
+	Description  string
+	IDVendor     int
+	ProfileImage []byte
+}
+
+func AddProduct(data FormDatas) error {
+	var err error
+
+	db := db.GetDB()
+
+	_, err = db.Exec(`
+        INSERT INTO product (name, price, description, id_vendor, profile_image) VALUES ($1, $2, $3, $4, $5)
+	`, data.Name, data.Price, data.Description, data.IDVendor, data.ProfileImage)
+	if err != nil {
+		return err
+	}
+	fmt.Println("Se agrego")
+	return nil
 }

@@ -2,6 +2,7 @@ package auth
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -41,28 +42,39 @@ func GetToken() string {
 	return miSecret
 }
 
-func Decode(tokenString string) bool {
+func Decode(tokenString string) (string, error) {
 	miSecret := GetToken()
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("Método de firma inválido: %v", token.Header["alg"])
+			return nil, fmt.Errorf("método de firma inválido: %v", token.Header["alg"])
 		}
 		return []byte(miSecret), nil
 	})
 	if err != nil {
-		fmt.Println("error")
-		return false
+		return "error tk", err
 	}
-	if token.Valid {
-		claims, ok := token.Claims.(jwt.MapClaims)
-		if ok && token.Valid {
-			username := claims["username"].(string)
-			fmt.Println(username)
-			return true
-		}
-	} else {
-		fmt.Println("token invalido")
-		return false
+	if !token.Valid {
+		return "", err
 	}
-	return true
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return "", fmt.Errorf("error al obtener los claims del token")
+	}
+
+	exp, ok := claims["exp"].(float64)
+	if !ok {
+		return "", fmt.Errorf("reclamación 'exp' no válida en el token")
+	}
+
+	expirationTime := time.Unix(int64(exp), 0)
+	if time.Now().After(expirationTime) {
+		return "", errors.New("token expirado")
+	}
+
+	username, ok := claims["username"].(string)
+	if !ok {
+		return "", fmt.Errorf("username no encontrado en los claims")
+	}
+	return username, nil
 }
