@@ -1,9 +1,9 @@
 package products
 
 import (
+	"Project/db"
 	"fmt"
 
-	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 )
 
@@ -16,14 +16,39 @@ type Product struct {
 	ProfileImage []byte  `db:"profile_image"`
 }
 
-func GetProducts() ([]Product, error) {
-	connStr := "host=192.168.0.73 port=5432 user=postgres dbname=marketupi password=mi_contraseña sslmode=disable"
-	var products []Product
-	db, err := sqlx.Connect("postgres", connStr)
+func GetProduct(name string) ([]Product, error) {
+	var product []Product
+	var err error
+	db := db.GetDB()
+
+	err = db.Ping()
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+
+	rows, err := db.Queryx("SELECT * FROM product WHERE LOWER(name) = LOWER($1)", name)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var p Product
+		err := rows.StructScan(&p)
+		if err != nil {
+			return nil, err
+		}
+		product = append(product, p)
+	}
+	return product, nil
+}
+
+func GetProducts() ([]Product, error) {
+	var products []Product
+
+	var err error
+
+	db := db.GetDB()
 
 	err = db.Ping()
 	if err != nil {
@@ -42,8 +67,30 @@ func GetProducts() ([]Product, error) {
 		if err != nil {
 			return nil, err
 		}
-		fmt.Println(p.ID, p.Name, p.Price, p.Description, p.IDVendor, p.ProfileImage)
 		products = append(products, p)
 	}
 	return products, nil
+}
+
+type FormDatas struct {
+	Name         string
+	Price        float64
+	Description  string
+	IDVendor     int
+	ProfileImage []byte
+}
+
+func AddProduct(data FormDatas) error {
+	var err error
+
+	db := db.GetDB()
+
+	_, err = db.Exec(`
+        INSERT INTO product (name, price, description, id_vendor, profile_image) VALUES ($1, $2, $3, $4, $5)
+	`, data.Name, data.Price, data.Description, data.IDVendor, data.ProfileImage)
+	if err != nil {
+		return err
+	}
+	fmt.Println("Se agrego")
+	return nil
 }
